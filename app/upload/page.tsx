@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -59,113 +59,112 @@ const categoryOptions: Array<{
   },
 ];
 
-interface PreviewTask {
+type AIExtractedTask = {
   title: string;
+  description: string;
   category: TaskCategory;
-  deadline: string;
-  delegate: string;
+  priority: number;
+  deadlineText: string | null;
+  assignedRole:
+    | "owner"
+    | "childcare_delegate"
+    | "finance_delegate"
+    | null;
+  sensitivity: "normal" | "restricted" | "private";
   confidence: number;
+  whyImportant: string;
+};
+
+type AIExtractionResult = {
+  tasks: AIExtractedTask[];
+  missingInformation: string[];
+  safetyNote: string;
+};
+
+function getRoleLabel(role: AIExtractedTask["assignedRole"]) {
+  if (role === "childcare_delegate") {
+    return "Childcare Delegate";
+  }
+
+  if (role === "finance_delegate") {
+    return "Finance & Admin Delegate";
+  }
+
+  if (role === "owner") {
+    return "Household Owner";
+  }
+
+  return "Needs owner review";
 }
 
 export default function UploadPage() {
   const [note, setNote] = useState("");
   const [category, setCategory] = useState<TaskCategory>("childcare");
   const [isExtracting, setIsExtracting] = useState(false);
-  const [hasPreview, setHasPreview] = useState(false);
-
-  const previewTasks = useMemo<PreviewTask[]>(() => {
-    const sourceText = note.toLowerCase();
-
-    const detectedTasks: PreviewTask[] = [];
-
-    if (
-      sourceText.includes("school") ||
-      sourceText.includes("pickup") ||
-      category === "childcare"
-    ) {
-      detectedTasks.push({
-        title: "Pick up Kabir from Green Valley School",
-        category: "childcare",
-        deadline: "Today, 2:00 PM",
-        delegate: "Childcare Delegate",
-        confidence: 0.98,
-      });
-    }
-
-    if (
-      sourceText.includes("bruno") ||
-      sourceText.includes("pet") ||
-      sourceText.includes("feed") ||
-      category === "pet_care"
-    ) {
-      detectedTasks.push({
-        title: "Feed Bruno",
-        category: "pet_care",
-        deadline: "Today, 7:00 PM",
-        delegate: "Childcare Delegate",
-        confidence: 0.94,
-      });
-    }
-
-    if (
-      sourceText.includes("bill") ||
-      sourceText.includes("landlord") ||
-      category === "bills"
-    ) {
-      detectedTasks.push({
-        title: "Call landlord about electricity bill",
-        category: "bills",
-        deadline: "Today, before 5:00 PM",
-        delegate: "Finance & Admin Delegate",
-        confidence: 0.93,
-      });
-    }
-
-    if (
-      sourceText.includes("medicine") ||
-      sourceText.includes("medication") ||
-      category === "medication"
-    ) {
-      detectedTasks.push({
-        title: "Confirm existing evening medicine routine",
-        category: "medication",
-        deadline: "Today, 8:00 PM",
-        delegate: "Household Owner",
-        confidence: 0.72,
-      });
-    }
-
-    if (detectedTasks.length === 0) {
-      detectedTasks.push({
-        title: "Review household note and confirm instructions",
-        category,
-        deadline: "No deadline detected",
-        delegate: "Household Owner",
-        confidence: 0.55,
-      });
-    }
-
-    return detectedTasks;
-  }, [note, category]);
+  const [result, setResult] = useState<AIExtractionResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function loadExampleNote() {
     setNote(exampleNote);
     setCategory("childcare");
-    setHasPreview(false);
+    setResult(null);
+    setError(null);
   }
 
-  function handlePreview() {
+  async function handleExtraction() {
     if (!note.trim()) {
+      setError("Please paste a household note before extracting tasks.");
       return;
     }
 
     setIsExtracting(true);
-    setHasPreview(false);
+    setResult(null);
+    setError(null);
 
-    window.setTimeout(() => {
+    try {
+      const response = await fetch("/api/ai/extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          note,
+          selectedCategory: category,
+        }),
+      });
+
+      const responseBody: unknown = await response.json();
+
+      if (!response.ok) {
+        const apiError =
+          typeof responseBody === "object" &&
+          responseBody !== null &&
+          "error" in responseBody &&
+          typeof responseBody.error === "string"
+            ? responseBody.error
+            : "The extraction request could not be completed.";
+
+        throw new Error(apiError);
+      }
+
+      if (
+        typeof responseBody !== "object" ||
+        responseBody === null ||
+        !("data" in responseBody)
+      ) {
+        throw new Error("The server returned an unexpected response.");
+      }
+
+      setResult(responseBody.data as AIExtractionResult);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Something went wrong while extracting tasks.",
+      );
+    } finally {
       setIsExtracting(false);
-      setHasPreview(true);
-    }, 700);
+    }
   }
 
   return (
@@ -182,7 +181,7 @@ export default function UploadPage() {
 
           <div className="inline-flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700">
             <ShieldCheck className="h-4 w-4" />
-            Private demo workspace
+            Secure server-side AI request
           </div>
         </div>
       </header>
@@ -193,7 +192,7 @@ export default function UploadPage() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-3 py-1 text-sm font-bold text-indigo-700">
                 <BrainCircuit className="h-4 w-4" />
-                Household information intake
+                AI household information intake
               </div>
 
               <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
@@ -201,9 +200,9 @@ export default function UploadPage() {
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                Paste a routine, reminder, bill note, or contact information.
-                In the next phase, Gemini will extract tasks, deadlines,
-                categories, and possible delegate assignments.
+                Gemini extracts practical tasks from the text, identifies
+                deadlines and categories, and flags information that still
+                needs confirmation.
               </p>
             </div>
 
@@ -248,7 +247,8 @@ export default function UploadPage() {
               value={note}
               onChange={(event) => {
                 setNote(event.target.value);
-                setHasPreview(false);
+                setResult(null);
+                setError(null);
               }}
               placeholder="Example: Kabir must be picked up from Green Valley School by 2 PM today. Meera is approved as backup pickup contact..."
               className="mt-2 min-h-72 w-full resize-y rounded-2xl border border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
@@ -267,7 +267,8 @@ export default function UploadPage() {
                 value={category}
                 onChange={(event) => {
                   setCategory(event.target.value as TaskCategory);
-                  setHasPreview(false);
+                  setResult(null);
+                  setError(null);
                 }}
                 className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
               >
@@ -286,22 +287,29 @@ export default function UploadPage() {
               </p>
             </div>
 
+            {error ? (
+              <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-bold">Extraction failed</p>
+                <p className="mt-1 leading-6">{error}</p>
+              </div>
+            ) : null}
+
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                onClick={handlePreview}
+                onClick={handleExtraction}
                 disabled={!note.trim() || isExtracting}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {isExtracting ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Preparing preview...
+                    Gemini is extracting tasks...
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4" />
-                    Preview extraction
+                    Extract tasks with Gemini
                   </>
                 )}
               </button>
@@ -324,22 +332,22 @@ export default function UploadPage() {
 
                 <div>
                   <h2 className="font-black text-cyan-950">
-                    What AI will do
+                    What Gemini does
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-cyan-900">
-                    The final Gemini integration will extract clear household
-                    tasks, identify deadlines, suggest categories, and flag
-                    uncertainty rather than inventing information.
+                    The model extracts only explicit facts from the note. It
+                    returns structured task data through a server route and
+                    flags ambiguity instead of inventing details.
                   </p>
                 </div>
               </div>
 
               <ul className="mt-5 space-y-3">
                 {[
-                  "Extract tasks from unstructured notes",
-                  "Identify dates, times, contacts, and categories",
-                  "Suggest the appropriate delegate role",
-                  "Flag unclear or missing information",
+                  "Extract practical tasks from unstructured notes",
+                  "Identify explicit dates, times, contacts, and categories",
+                  "Suggest a limited delegate role",
+                  "Flag unclear or missing operational information",
                 ].map((item) => (
                   <li
                     key={item}
@@ -363,9 +371,9 @@ export default function UploadPage() {
                     Prototype safety note
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-amber-900">
-                    This hackathon version uses simulated data. Do not upload
-                    real medical records, passwords, banking details, or
-                    sensitive personal documents.
+                    This is a hackathon prototype. Do not upload real medical
+                    records, passwords, banking details, government documents,
+                    or sensitive personal information.
                   </p>
                 </div>
               </div>
@@ -373,13 +381,13 @@ export default function UploadPage() {
           </aside>
         </section>
 
-        {hasPreview ? (
+        {result ? (
           <section className="mt-8 rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm sm:p-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-700">
                   <Sparkles className="h-4 w-4" />
-                  Demo extraction preview
+                  Gemini extraction complete
                 </div>
 
                 <h2 className="mt-3 text-2xl font-black text-slate-900">
@@ -387,51 +395,132 @@ export default function UploadPage() {
                 </h2>
 
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This is placeholder local logic. In the next phase, these
-                  values will come from the Gemini API through a secure backend
-                  route.
+                  Review every result before relying on it. The task data is
+                  generated from the supplied note and is not yet saved to the
+                  household database.
                 </p>
               </div>
 
               <span className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">
                 <CheckCircle2 className="h-4 w-4" />
-                Ready for review
+                {result.tasks.length} task
+                {result.tasks.length === 1 ? "" : "s"} found
               </span>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {previewTasks.map((task) => (
-                <article
-                  key={`${task.title}-${task.category}`}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">
-                      {CATEGORY_LABELS[task.category]}
-                    </span>
+            {result.tasks.length > 0 ? (
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {result.tasks.map((task, index) => (
+                  <article
+                    key={`${task.title}-${index}`}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">
+                        {CATEGORY_LABELS[task.category]}
+                      </span>
 
-                    <span className="text-xs font-bold text-emerald-700">
-                      {Math.round(task.confidence * 100)}% confidence
-                    </span>
-                  </div>
+                      <span className="text-xs font-bold text-emerald-700">
+                        {Math.round(task.confidence * 100)}% confidence
+                      </span>
+                    </div>
 
-                  <h3 className="mt-4 text-lg font-black text-slate-900">
-                    {task.title}
+                    <h3 className="mt-4 text-lg font-black text-slate-900">
+                      {task.title}
+                    </h3>
+
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      {task.description}
+                    </p>
+
+                    <dl className="mt-4 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm">
+                      <div className="flex flex-wrap gap-x-2">
+                        <dt className="font-bold text-slate-600">Deadline:</dt>
+                        <dd className="text-slate-700">
+                          {task.deadlineText ?? "No explicit deadline found"}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-wrap gap-x-2">
+                        <dt className="font-bold text-slate-600">Suggested:</dt>
+                        <dd className="text-slate-700">
+                          {getRoleLabel(task.assignedRole)}
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-wrap gap-x-2">
+                        <dt className="font-bold text-slate-600">Priority:</dt>
+                        <dd className="text-slate-700">
+                          {task.priority} / 5
+                        </dd>
+                      </div>
+
+                      <div className="flex flex-wrap gap-x-2">
+                        <dt className="font-bold text-slate-600">
+                          Visibility:
+                        </dt>
+                        <dd className="capitalize text-slate-700">
+                          {task.sensitivity}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+                      <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                        Why this matters
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-indigo-950">
+                        {task.whyImportant}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-600">
+                Gemini did not find an explicit actionable task in this note.
+              </div>
+            )}
+
+            <div className="mt-6 grid gap-4 border-t border-slate-200 pt-6 lg:grid-cols-2">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                <div className="flex items-center gap-2">
+                  <TriangleAlert className="h-5 w-5 text-amber-700" />
+                  <h3 className="font-black text-amber-950">
+                    Missing or unclear information
                   </h3>
+                </div>
 
-                  <dl className="mt-4 space-y-2 text-sm">
-                    <div className="flex gap-2">
-                      <dt className="font-bold text-slate-600">Deadline:</dt>
-                      <dd className="text-slate-700">{task.deadline}</dd>
-                    </div>
+                {result.missingInformation.length > 0 ? (
+                  <ul className="mt-4 space-y-2">
+                    {result.missingInformation.map((item, index) => (
+                      <li
+                        key={`${item}-${index}`}
+                        className="flex gap-2 text-sm leading-6 text-amber-950"
+                      >
+                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-600" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm leading-6 text-amber-900">
+                    No obvious missing information was identified from this
+                    note. Review the note manually before taking action.
+                  </p>
+                )}
+              </div>
 
-                    <div className="flex gap-2">
-                      <dt className="font-bold text-slate-600">Suggested:</dt>
-                      <dd className="text-slate-700">{task.delegate}</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-slate-700" />
+                  <h3 className="font-black text-slate-900">Safety note</h3>
+                </div>
+
+                <p className="mt-3 text-sm leading-6 text-slate-700">
+                  {result.safetyNote}
+                </p>
+              </div>
             </div>
 
             <div className="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-6 sm:flex-row">
@@ -445,10 +534,13 @@ export default function UploadPage() {
 
               <button
                 type="button"
-                onClick={() => setHasPreview(false)}
+                onClick={() => {
+                  setResult(null);
+                  setError(null);
+                }}
                 className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
               >
-                Edit note
+                Extract another note
               </button>
             </div>
           </section>
@@ -457,12 +549,12 @@ export default function UploadPage() {
         <section className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
           <UploadCloud className="mx-auto h-7 w-7 text-slate-400" />
           <p className="mt-3 font-bold text-slate-800">
-            File upload comes after AI extraction
+            Text-first extraction is active
           </p>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-            For the first AI integration, we will send pasted text securely to
-            Gemini. PDF/image file handling and OCR are optional future
-            improvements.
+            The MVP securely processes pasted text. PDF/image upload and OCR
+            are optional next-stage features, after database storage and
+            delegate-access rules are complete.
           </p>
         </section>
       </div>
