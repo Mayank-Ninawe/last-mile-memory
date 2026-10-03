@@ -29,7 +29,9 @@ export async function createHousehold(
   });
 }
 
-export async function getHouseholdForOwner(ownerId: string) {
+export async function getHouseholdForOwner(
+  ownerId: string,
+): Promise<(FirestoreHousehold & { id: string }) | null> {
   const householdQuery = query(
     collection(firestore, "households"),
     where("ownerId", "==", ownerId),
@@ -46,6 +48,6 @@ export async function getHouseholdForOwner(ownerId: string) {
 
   return {
     id: householdDocument.id,
-    ...householdDocument.data(),
+    ...(householdDocument.data() as FirestoreHousehold),
   };
 }

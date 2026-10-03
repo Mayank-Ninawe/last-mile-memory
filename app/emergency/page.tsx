@@ -32,6 +32,12 @@ import {
   markTaskPending,
   type FirestoreTaskDocument,
 } from "@/lib/firebase/firestore";
+import {
+  activateEmergencySession,
+  deactivateEmergencySession,
+  getActiveEmergencySession,
+  type FirestoreEmergencySessionDocument,
+} from "@/lib/firebase/emergency-sessions";
 import { getHouseholdForOwner } from "@/lib/firebase/households";
 
 const categoryIcons = {
@@ -94,7 +100,10 @@ function EmergencyContent() {
     null,
   );
   const [error, setError] = useState<string | null>(null);
-  const [isEmergencyActive, setIsEmergencyActive] = useState(true);
+  const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [emergencySession, setEmergencySession] =
+    useState<FirestoreEmergencySessionDocument | null>(null);
+  const [isUpdatingSession, setIsUpdatingSession] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
 
   useEffect(() => {
@@ -115,9 +124,12 @@ function EmergencyContent() {
         }
 
         const householdTasks = await getTasksForHousehold(household.id);
+        const activeSession = await getActiveEmergencySession(household.id);
 
-        setHouseholdName("Your household");
+        setHouseholdName(household.name);
+        setHouseholdId(household.id);
         setTasks(householdTasks);
+        setEmergencySession(activeSession);
       } catch (caughtError) {
         setError(
           caughtError instanceof Error
@@ -197,6 +209,38 @@ function EmergencyContent() {
     }
   }
 
+  async function toggleEmergencySession() {
+    if (!householdId || !user) {
+      return;
+    }
+
+    setIsUpdatingSession(true);
+    setError(null);
+
+    try {
+      if (emergencySession) {
+        await deactivateEmergencySession(emergencySession.id);
+        setEmergencySession(null);
+        return;
+      }
+
+      const newSession = await activateEmergencySession(
+        householdId,
+        user.uid,
+      );
+
+      setEmergencySession(newSession);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to update emergency mode.",
+      );
+    } finally {
+      setIsUpdatingSession(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <main className="grid min-h-screen place-items-center bg-slate-100 px-4">
@@ -254,14 +298,20 @@ function EmergencyContent() {
 
               <button
                 type="button"
-                onClick={() => setIsEmergencyActive((current) => !current)}
-                className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold shadow-lg transition ${
-                  isEmergencyActive
+                onClick={() => void toggleEmergencySession()}
+                disabled={isUpdatingSession}
+                className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold shadow-lg transition disabled:cursor-wait disabled:opacity-70 ${
+                  emergencySession
                     ? "bg-white text-rose-700 hover:bg-rose-50"
                     : "bg-slate-900 text-white hover:bg-slate-800"
                 }`}
               >
-                {isEmergencyActive ? (
+                {isUpdatingSession ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Updating emergency mode...
+                  </>
+                ) : emergencySession ? (
                   <>
                     <CheckCircle2 className="h-4 w-4" />
                     Emergency mode active
