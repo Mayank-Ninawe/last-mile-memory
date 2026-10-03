@@ -4,12 +4,11 @@ import {
   doc,
   getDoc,
   getDocs,
-  orderBy,
-  query,
   serverTimestamp,
   updateDoc,
   where,
   writeBatch,
+  query,
 } from "firebase/firestore";
 
 import { firestore } from "@/lib/firebase/client";
@@ -48,6 +47,10 @@ export type FirestoreTask = {
   completedAt?: unknown;
 };
 
+export type FirestoreTaskDocument = FirestoreTask & {
+  id: string;
+};
+
 export type NewFirestoreTask = Omit<
   FirestoreTask,
   "householdId" | "createdAt" | "completedAt"
@@ -79,7 +82,9 @@ export async function saveTasksForHousehold(
   await batch.commit();
 }
 
-export async function getTasksForHousehold(householdId: string) {
+export async function getTasksForHousehold(
+  householdId: string,
+): Promise<FirestoreTaskDocument[]> {
   const tasksQuery = query(
     collection(firestore, "tasks"),
     where("householdId", "==", householdId),
@@ -90,7 +95,7 @@ export async function getTasksForHousehold(householdId: string) {
   return snapshot.docs
     .map((taskDocument) => ({
       id: taskDocument.id,
-      ...taskDocument.data(),
+      ...(taskDocument.data() as FirestoreTask),
     }))
     .sort((firstTask, secondTask) => {
       const firstPriority =
@@ -110,6 +115,13 @@ export async function markTaskCompleted(taskId: string) {
   });
 }
 
+export async function markTaskPending(taskId: string) {
+  return updateDoc(doc(firestore, "tasks", taskId), {
+    status: "pending",
+    completedAt: null,
+  });
+}
+
 export async function getTaskById(taskId: string) {
   const taskDocument = await getDoc(doc(firestore, "tasks", taskId));
 
@@ -119,6 +131,6 @@ export async function getTaskById(taskId: string) {
 
   return {
     id: taskDocument.id,
-    ...taskDocument.data(),
+    ...(taskDocument.data() as FirestoreTask),
   };
 }
