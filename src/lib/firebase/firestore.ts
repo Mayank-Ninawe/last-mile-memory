@@ -9,36 +9,74 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 
 import { firestore } from "@/lib/firebase/client";
+
+export type FirestoreTaskCategory =
+  | "childcare"
+  | "pet_care"
+  | "bills"
+  | "medication"
+  | "emergency_contact";
+
+export type FirestoreDelegateRole =
+  | "owner"
+  | "childcare_delegate"
+  | "finance_delegate";
+
+export type FirestoreTaskStatus =
+  | "pending"
+  | "completed"
+  | "needs_confirmation";
 
 export type FirestoreTask = {
   householdId: string;
   title: string;
   description: string;
-  category:
-    | "childcare"
-    | "pet_care"
-    | "bills"
-    | "medication"
-    | "emergency_contact";
+  category: FirestoreTaskCategory;
   priority: number;
   deadlineText: string | null;
-  assignedRole: "owner" | "childcare_delegate" | "finance_delegate" | null;
+  assignedRole: FirestoreDelegateRole | null;
   sensitivity: "normal" | "restricted" | "private";
   confidence: number;
   whyImportant: string;
-  status: "pending" | "completed" | "needs_confirmation";
+  status: FirestoreTaskStatus;
+  sourceName: string;
   createdAt?: unknown;
   completedAt?: unknown;
 };
+
+export type NewFirestoreTask = Omit<
+  FirestoreTask,
+  "householdId" | "createdAt" | "completedAt"
+>;
 
 export async function saveTask(task: FirestoreTask) {
   return addDoc(collection(firestore, "tasks"), {
     ...task,
     createdAt: serverTimestamp(),
   });
+}
+
+export async function saveTasksForHousehold(
+  householdId: string,
+  tasks: NewFirestoreTask[],
+) {
+  const batch = writeBatch(firestore);
+
+  tasks.forEach((task) => {
+    const taskReference = doc(collection(firestore, "tasks"));
+
+    batch.set(taskReference, {
+      ...task,
+      householdId,
+      createdAt: serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
 }
 
 export async function getTasksForHousehold(householdId: string) {

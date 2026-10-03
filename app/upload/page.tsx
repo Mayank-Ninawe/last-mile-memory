@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,13 +11,21 @@ import {
   FileText,
   Lightbulb,
   LoaderCircle,
+  Save,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
   UploadCloud,
 } from "lucide-react";
 
+import { ProtectedRoute } from "@/components/providers/protected-route";
+import { useAuth } from "@/components/providers/auth-provider";
 import { CATEGORY_LABELS } from "@/lib/constants/categories";
+import {
+  saveTasksForHousehold,
+  type NewFirestoreTask,
+} from "@/lib/firebase/firestore";
+import { getHouseholdForOwner } from "@/lib/firebase/households";
 import type { TaskCategory } from "@/types/task";
 
 const exampleNote = `School pickup:
@@ -97,18 +105,55 @@ function getRoleLabel(role: AIExtractedTask["assignedRole"]) {
   return "Needs owner review";
 }
 
-export default function UploadPage() {
+function UploadContent() {
+  const { user } = useAuth();
+
   const [note, setNote] = useState("");
   const [category, setCategory] = useState<TaskCategory>("childcare");
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingHousehold, setIsLoadingHousehold] = useState(true);
+
+  const [householdId, setHouseholdId] = useState<string | null>(null);
   const [result, setResult] = useState<AIExtractionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadHousehold() {
+      if (!user) {
+        return;
+      }
+
+      try {
+        const household = await getHouseholdForOwner(user.uid);
+
+        if (!household) {
+          window.location.href = "/onboarding";
+          return;
+        }
+
+        setHouseholdId(household.id);
+      } catch (caughtError) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to find your household workspace.",
+        );
+      } finally {
+        setIsLoadingHousehold(false);
+      }
+    }
+
+    void loadHousehold();
+  }, [user]);
 
   function loadExampleNote() {
     setNote(exampleNote);
     setCategory("childcare");
     setResult(null);
     setError(null);
+    setSaveMessage(null);
   }
 
   async function handleExtraction() {
@@ -120,6 +165,7 @@ export default function UploadPage() {
     setIsExtracting(true);
     setResult(null);
     setError(null);
+    setSaveMessage(null);
 
     try {
       const response = await fetch("/api/ai/extract", {
@@ -167,6 +213,65 @@ export default function UploadPage() {
     }
   }
 
+  async function handleSaveTasks() {
+    if (!result || !householdId) {
+      return;
+    }
+
+    if (result.tasks.length === 0) {
+      setError("There are no extracted tasks to save.");
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      const tasksToSave: NewFirestoreTask[] = result.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+        category: task.category,
+        priority: task.priority,
+        deadlineText: task.deadlineText,
+        assignedRole: task.assignedRole,
+        sensitivity: task.sensitivity,
+        confidence: task.confidence,
+        whyImportant: task.whyImportant,
+        status:
+          task.confidence < 0.8 ? "needs_confirmation" : "pending",
+        sourceName: "Gemini household note extraction",
+      }));
+
+      await saveTasksForHousehold(householdId, tasksToSave);
+
+      setSaveMessage(
+        `${tasksToSave.length} task${
+          tasksToSave.length === 1 ? "" : "s"
+        } saved to your household workspace.`,
+      );
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to save extracted tasks.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  if (isLoadingHousehold) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-100 px-4">
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm">
+          <LoaderCircle className="h-5 w-5 animate-spin text-indigo-600" />
+          Loading your household workspace...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-100">
       <header className="border-b border-slate-200 bg-white">
@@ -181,7 +286,7 @@ export default function UploadPage() {
 
           <div className="inline-flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700">
             <ShieldCheck className="h-4 w-4" />
-            Secure server-side AI request
+            Private household workspace
           </div>
         </div>
       </header>
@@ -200,9 +305,9 @@ export default function UploadPage() {
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                Gemini extracts practical tasks from the text, identifies
-                deadlines and categories, and flags information that still
-                needs confirmation.
+                Gemini extracts practical tasks from the text. You review the
+                results, then save approved tasks into your private household
+                workspace.
               </p>
             </div>
 
@@ -249,6 +354,7 @@ export default function UploadPage() {
                 setNote(event.target.value);
                 setResult(null);
                 setError(null);
+                setSaveMessage(null);
               }}
               placeholder="Example: Kabir must be picked up from Green Valley School by 2 PM today. Meera is approved as backup pickup contact..."
               className="mt-2 min-h-72 w-full resize-y rounded-2xl border border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
@@ -269,6 +375,7 @@ export default function UploadPage() {
                   setCategory(event.target.value as TaskCategory);
                   setResult(null);
                   setError(null);
+                  setSaveMessage(null);
                 }}
                 className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
               >
@@ -289,8 +396,15 @@ export default function UploadPage() {
 
             {error ? (
               <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                <p className="font-bold">Extraction failed</p>
+                <p className="font-bold">Action failed</p>
                 <p className="mt-1 leading-6">{error}</p>
+              </div>
+            ) : null}
+
+            {saveMessage ? (
+              <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                <p className="font-bold">Tasks saved</p>
+                <p className="mt-1 leading-6">{saveMessage}</p>
               </div>
             ) : null}
 
@@ -332,22 +446,22 @@ export default function UploadPage() {
 
                 <div>
                   <h2 className="font-black text-cyan-950">
-                    What Gemini does
+                    Review before saving
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-cyan-900">
-                    The model extracts only explicit facts from the note. It
-                    returns structured task data through a server route and
-                    flags ambiguity instead of inventing details.
+                    Gemini provides structured decision support. You should
+                    verify every task and only save results that are accurate
+                    for your household.
                   </p>
                 </div>
               </div>
 
               <ul className="mt-5 space-y-3">
                 {[
-                  "Extract practical tasks from unstructured notes",
-                  "Identify explicit dates, times, contacts, and categories",
-                  "Suggest a limited delegate role",
-                  "Flag unclear or missing operational information",
+                  "Tasks are extracted only from supplied text",
+                  "Deadlines and categories are explicitly displayed",
+                  "Low-confidence tasks require confirmation",
+                  "Saved tasks belong to your Firebase household",
                 ].map((item) => (
                   <li
                     key={item}
@@ -371,9 +485,9 @@ export default function UploadPage() {
                     Prototype safety note
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-amber-900">
-                    This is a hackathon prototype. Do not upload real medical
-                    records, passwords, banking details, government documents,
-                    or sensitive personal information.
+                    Do not upload real medical records, passwords, bank
+                    details, government documents, or sensitive personal
+                    information.
                   </p>
                 </div>
               </div>
@@ -391,13 +505,12 @@ export default function UploadPage() {
                 </div>
 
                 <h2 className="mt-3 text-2xl font-black text-slate-900">
-                  Structured tasks detected
+                  Review extracted tasks
                 </h2>
 
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Review every result before relying on it. The task data is
-                  generated from the supplied note and is not yet saved to the
-                  household database.
+                  These tasks are not saved yet. Review them, then save the
+                  approved results to your household workspace.
                 </p>
               </div>
 
@@ -524,6 +637,27 @@ export default function UploadPage() {
             </div>
 
             <div className="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-6 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleSaveTasks}
+                disabled={
+                  isSaving || !householdId || result.tasks.length === 0
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {isSaving ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Saving tasks...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    Save approved tasks
+                  </>
+                )}
+              </button>
+
               <Link
                 href="/dashboard"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700"
@@ -537,6 +671,7 @@ export default function UploadPage() {
                 onClick={() => {
                   setResult(null);
                   setError(null);
+                  setSaveMessage(null);
                 }}
                 className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
               >
@@ -553,11 +688,19 @@ export default function UploadPage() {
           </p>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
             The MVP securely processes pasted text. PDF/image upload and OCR
-            are optional next-stage features, after database storage and
+            are optional next-stage features, after task storage and
             delegate-access rules are complete.
           </p>
         </section>
       </div>
     </main>
+  );
+}
+
+export default function UploadPage() {
+  return (
+    <ProtectedRoute>
+      <UploadContent />
+    </ProtectedRoute>
   );
 }
