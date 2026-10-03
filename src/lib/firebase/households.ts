@@ -1,6 +1,8 @@
 import {
   addDoc,
   collection,
+  doc,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -19,6 +21,10 @@ export type FirestoreHousehold = {
   updatedAt?: unknown;
 };
 
+export type FirestoreHouseholdDocument = FirestoreHousehold & {
+  id: string;
+};
+
 export async function createHousehold(
   household: FirestoreHousehold,
 ) {
@@ -31,7 +37,7 @@ export async function createHousehold(
 
 export async function getHouseholdForOwner(
   ownerId: string,
-): Promise<(FirestoreHousehold & { id: string }) | null> {
+): Promise<FirestoreHouseholdDocument | null> {
   const householdQuery = query(
     collection(firestore, "households"),
     where("ownerId", "==", ownerId),
@@ -45,6 +51,23 @@ export async function getHouseholdForOwner(
   }
 
   const householdDocument = snapshot.docs[0];
+
+  return {
+    id: householdDocument.id,
+    ...(householdDocument.data() as FirestoreHousehold),
+  };
+}
+
+export async function getHouseholdById(
+  householdId: string,
+): Promise<FirestoreHouseholdDocument | null> {
+  const householdDocument = await getDoc(
+    doc(firestore, "households", householdId),
+  );
+
+  if (!householdDocument.exists()) {
+    return null;
+  }
 
   return {
     id: householdDocument.id,
