@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function ownsHousehold(householdId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/households/$(householdId))
+        && get(/databases/$(database)/documents/households/$(householdId))
+          .data.ownerId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read, create, update: if isOwner(userId);
+    }
+
+    match /households/{householdId} {
+      allow read, update, delete: if signedIn()
+        && resource.data.ownerId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    match /delegates/{delegateId} {
+      allow read, write: if ownsHousehold(resource.data.householdId);
+      allow create: if ownsHousehold(request.resource.data.householdId);
+    }
+
+    match /householdItems/{itemId} {
+      allow read, write: if ownsHousehold(resource.data.householdId);
+      allow create: if ownsHousehold(request.resource.data.householdId);
+    }
+
+    match /tasks/{taskId} {
+      allow read, write: if ownsHousehold(resource.data.householdId);
+      allow create: if ownsHousehold(request.resource.data.householdId);
+    }
+
+    match /emergencySessions/{sessionId} {
+      allow read, write: if ownsHousehold(resource.data.householdId);
+      allow create: if ownsHousehold(request.resource.data.householdId);
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if ownsHousehold(resource.data.householdId);
+      allow create: if ownsHousehold(request.resource.data.householdId);
+    }
+  }
+}
