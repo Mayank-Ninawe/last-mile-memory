@@ -83,15 +83,24 @@ export async function getTasksForHousehold(householdId: string) {
   const tasksQuery = query(
     collection(firestore, "tasks"),
     where("householdId", "==", householdId),
-    orderBy("createdAt", "desc"),
   );
 
   const snapshot = await getDocs(tasksQuery);
 
-  return snapshot.docs.map((taskDocument) => ({
-    id: taskDocument.id,
-    ...taskDocument.data(),
-  }));
+  return snapshot.docs
+    .map((taskDocument) => ({
+      id: taskDocument.id,
+      ...taskDocument.data(),
+    }))
+    .sort((firstTask, secondTask) => {
+      const firstPriority =
+        typeof firstTask.priority === "number" ? firstTask.priority : 0;
+
+      const secondPriority =
+        typeof secondTask.priority === "number" ? secondTask.priority : 0;
+
+      return secondPriority - firstPriority;
+    });
 }
 
 export async function markTaskCompleted(taskId: string) {
