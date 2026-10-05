@@ -63,7 +63,7 @@ export default function SignupPage() {
         createdAt: serverTimestamp(),
       });
 
-      router.push("/onboarding");
+      router.replace("/onboarding");
     } catch (caughtError) {
       const message =
         caughtError instanceof Error
