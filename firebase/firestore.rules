@@ -2,56 +2,44 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return signedIn() && request.auth.uid == userId;
-    }
-
-    function ownsHousehold(householdId) {
-      return signedIn()
-        && exists(/databases/$(database)/documents/households/$(householdId))
-        && get(/databases/$(database)/documents/households/$(householdId))
-          .data.ownerId == request.auth.uid;
-    }
-
-    match /users/{userId} {
-      allow read, create, update: if isOwner(userId);
-    }
-
     match /households/{householdId} {
-      allow read, update, delete: if signedIn()
-        && resource.data.ownerId == request.auth.uid;
-
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid;
-    }
 
-    match /delegates/{delegateId} {
-      allow read, write: if ownsHousehold(resource.data.householdId);
-      allow create: if ownsHousehold(request.resource.data.householdId);
-    }
-
-    match /householdItems/{itemId} {
-      allow read, write: if ownsHousehold(resource.data.householdId);
-      allow create: if ownsHousehold(request.resource.data.householdId);
+      allow read, update, delete: if signedIn()
+        && resource.data.ownerId == request.auth.uid;
     }
 
     match /tasks/{taskId} {
-      allow read, write: if ownsHousehold(resource.data.householdId);
-      allow create: if ownsHousehold(request.resource.data.householdId);
+      allow create: if signedIn()
+        && get(
+          /databases/$(database)/documents/households/$(request.resource.data.householdId)
+        ).data.ownerId == request.auth.uid;
+
+      allow read, update, delete: if signedIn()
+        && get(
+          /databases/$(database)/documents/households/$(resource.data.householdId)
+        ).data.ownerId == request.auth.uid;
     }
 
     match /emergencySessions/{sessionId} {
-      allow read, write: if ownsHousehold(resource.data.householdId);
-      allow create: if ownsHousehold(request.resource.data.householdId);
+      allow create: if signedIn()
+        && request.resource.data.activatedByUserId == request.auth.uid;
+
+      allow read, update: if signedIn();
+
+      allow delete: if false;
     }
 
-    match /auditLogs/{logId} {
-      allow read: if ownsHousehold(resource.data.householdId);
-      allow create: if ownsHousehold(request.resource.data.householdId);
+    match /delegates/{delegateId} {
+      allow create, read: if signedIn();
+
+      allow update, delete: if false;
     }
   }
 }
