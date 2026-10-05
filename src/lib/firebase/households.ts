@@ -26,13 +26,22 @@ export type FirestoreHouseholdDocument = FirestoreHousehold & {
 };
 
 export async function createHousehold(
-  household: FirestoreHousehold,
+  ownerId: string,
+  name: string,
 ) {
-  return addDoc(collection(firestore, "households"), {
-    ...household,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  const householdReference = await addDoc(
+    collection(firestore, "households"),
+    {
+      ownerId,
+      name,
+      emergencyModeActive: false,
+      activeEmergencyMode: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+  );
+
+  return householdReference;
 }
 
 export async function getHouseholdForOwner(

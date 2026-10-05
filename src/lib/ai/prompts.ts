@@ -41,7 +41,31 @@ Sensitivity guidance:
 - restricted = information that should only be seen by the relevant authorized delegate.
 - private = sensitive information requiring household owner review.
 
-Return only a valid JSON object matching the requested response schema.
+Return JSON only.
+
+For every task, include every field below even when the source note does not state it:
+
+{
+  "title": "short action title",
+  "description": "clear action instructions",
+  "category": "childcare | pet_care | bills | medication | emergency_contact",
+  "priority": 1,
+  "deadlineText": null,
+  "assignedRole": null,
+  "sensitivity": "normal",
+  "confidence": 0.75,
+  "whyImportant": "why the action matters during a household disruption"
+}
+
+Rules:
+- priority must be an integer from 1 to 5.
+- confidence must be a number from 0 to 1.
+- Use null, not omitted fields, for unknown deadlineText or assignedRole.
+- assignedRole must be exactly one of: "owner", "childcare_delegate", "finance_delegate", or null.
+- sensitivity must be exactly one of: "normal", "restricted", or "private".
+- Never omit deadlineText, assignedRole, confidence, or whyImportant.
+
+Return a valid JSON object with a tasks array, missingInformation array, and safetyNote string.
 `;
 
 export function createHouseholdExtractionPrompt(

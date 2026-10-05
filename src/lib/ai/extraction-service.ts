@@ -34,6 +34,51 @@ function wait(milliseconds: number) {
   });
 }
 
+function normalizeExtractionResponse(parsedResponse: unknown): unknown {
+  if (
+    typeof parsedResponse !== "object" ||
+    parsedResponse === null ||
+    Array.isArray(parsedResponse)
+  ) {
+    return parsedResponse;
+  }
+
+  const response = parsedResponse as Record<string, unknown>;
+  const tasks = response.tasks;
+
+  return {
+    ...response,
+    tasks: Array.isArray(tasks)
+      ? tasks.map((task) => {
+          if (
+            typeof task !== "object" ||
+            task === null ||
+            Array.isArray(task)
+          ) {
+            return task;
+          }
+
+          const taskRecord = task as Record<string, unknown>;
+
+          return {
+            ...taskRecord,
+            deadlineText: taskRecord.deadlineText ?? null,
+            assignedRole: taskRecord.assignedRole ?? null,
+            confidence:
+              typeof taskRecord.confidence === "number"
+                ? taskRecord.confidence
+                : 0.65,
+            whyImportant:
+              typeof taskRecord.whyImportant === "string" &&
+              taskRecord.whyImportant.trim()
+                ? taskRecord.whyImportant
+                : "Review this extracted household action before acting.",
+          };
+        })
+      : [],
+  };
+}
+
 export async function extractHouseholdTasks(
   note: string,
   selectedCategory: string,
@@ -67,7 +112,9 @@ export async function extractHouseholdTasks(
         throw new Error("Gemini returned invalid JSON.");
       }
 
-      return aiExtractionResponseSchema.parse(parsedResponse);
+      const normalizedResponse = normalizeExtractionResponse(parsedResponse);
+
+      return aiExtractionResponseSchema.parse(normalizedResponse);
     } catch (error) {
       lastError = error;
 

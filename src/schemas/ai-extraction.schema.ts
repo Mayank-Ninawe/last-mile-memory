@@ -17,13 +17,18 @@ export const AI_DELEGATE_ROLES = [
 export const extractedTaskSchema = z.object({
   title: z.string().min(1).max(180),
   description: z.string().min(1).max(800),
-  category: z.enum(AI_TASK_CATEGORIES),
-  priority: z.number().int().min(1).max(5),
-  deadlineText: z.string().max(180).nullable(),
-  assignedRole: z.enum(AI_DELEGATE_ROLES).nullable(),
-  sensitivity: z.enum(["normal", "restricted", "private"]),
-  confidence: z.number().min(0).max(1),
-  whyImportant: z.string().min(1).max(500),
+  category: z.enum(AI_TASK_CATEGORIES).default("emergency_contact"),
+  priority: z.number().int().min(1).max(5).default(3),
+  deadlineText: z.string().max(180).nullable().optional().default(null),
+  assignedRole: z.enum(AI_DELEGATE_ROLES).nullable().optional().default(null),
+  sensitivity: z.enum(["normal", "restricted", "private"]).default("normal"),
+  confidence: z.number().min(0).max(1).optional().default(0.65),
+  whyImportant: z
+    .string()
+    .min(1)
+    .max(500)
+    .optional()
+    .default("Review this extracted household action before acting."),
 });
 
 export const aiExtractionResponseSchema = z.object({

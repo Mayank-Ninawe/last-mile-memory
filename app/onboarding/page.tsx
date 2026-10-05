@@ -79,12 +79,7 @@ function OnboardingContent() {
     setIsSubmitting(true);
 
     try {
-      await createHousehold({
-        ownerId: user.uid,
-        name: householdName.trim(),
-        emergencyModeActive: false,
-        activeEmergencyMode: null,
-      });
+      await createHousehold(user.uid, householdName.trim());
 
       router.replace("/dashboard");
     } catch (caughtError) {

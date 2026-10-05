@@ -73,13 +73,22 @@ export default function HomePage() {
             </span>
           </Link>
 
-          <Link
-            href="/emergency"
-            className="hidden items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 sm:inline-flex"
-          >
-            View demo
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/login"
+              className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700"
+            >
+              Log in
+            </Link>
+
+            <Link
+              href="/emergency"
+              className="hidden items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 sm:inline-flex"
+            >
+              View demo
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </nav>
 
         <div className="relative mx-auto max-w-7xl px-5 pb-24 pt-12 sm:px-8 sm:pb-32 sm:pt-20">
